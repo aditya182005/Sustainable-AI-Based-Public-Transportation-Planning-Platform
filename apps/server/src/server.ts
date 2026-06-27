@@ -1,0 +1,8 @@
+const app = require("./app").default || require("./app");
+const { config } = require("./config/env");
+
+const PORT = config.PORT || 5000;
+
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+});
