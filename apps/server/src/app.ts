@@ -4,38 +4,56 @@ import helmet from "helmet";
 import morgan from "morgan";
 import rateLimit from "express-rate-limit";
 import { router as indexRouter } from "./routes/index";
-// If middleware files are missing, provide simple fallback handlers
-// to avoid build errors while preserving app behavior.
-// Replace these with project-specific middleware when available.
-const notFoundHandler = (req: express.Request, res: express.Response) => {
-	res.status(404).json({ message: "Not Found" });
-};
-
-const errorHandler = (
-	err: any,
-	req: express.Request,
-	res: express.Response,
-	// eslint-disable-next-line @typescript-eslint/no-unused-vars
-	next: express.NextFunction
-) => {
-	const status = err?.status || 500;
-	const message = err?.message || "Internal Server Error";
-	res.status(status).json({ message });
-};
+import { authRouter } from "./routes/auth.routes";
+import { notFoundHandler } from "./middlewares/notFound.middleware";
+import { errorHandler } from "./middlewares/error.middleware";
 
 const app: Application = express();
 
-// Middleware
+// Trust proxy when running behind a proxy (Render, Vercel, etc.)
+if (process.env.TRUST_PROXY === "true") {
+  app.set("trust proxy", true);
+}
+
+// Body parsers
 app.use(express.json());
-app.use(cors());
-app.use(helmet());
-app.use(morgan("dev"));
-app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 100 }));
+app.use(express.urlencoded({ extended: true }));
+
+// ✅ Test route (for debugging JSON parsing)
+app.all("/test", (req, res) => {
+  console.log("Body:", req.body);
+  res.json({ received: req.body, method: req.method });
+});
+
 
 // Routes
 app.use("/api", indexRouter);
+app.use("/api/auth", authRouter);
 
-// Error handling
+// CORS
+const CORS_ORIGIN = process.env.CORS_ORIGIN || "*";
+app.use(cors({ origin: CORS_ORIGIN }));
+
+// Security headers
+app.use(helmet());
+
+// Logging (skip verbose logging in tests)
+if (process.env.NODE_ENV !== "test") {
+  const loggerFormat = process.env.NODE_ENV === "production" ? "combined" : "dev";
+  app.use(morgan(loggerFormat));
+}
+
+// Rate limiting (configurable via env)
+const WINDOW_MS = Number(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000;
+const RATE_LIMIT_MAX = Number(process.env.RATE_LIMIT_MAX) || 100;
+app.use(
+  rateLimit({
+    windowMs: WINDOW_MS,
+    max: RATE_LIMIT_MAX,
+  })
+);
+
+// Error handling (must be last!)
 app.use(notFoundHandler);
 app.use(errorHandler);
 
